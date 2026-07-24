@@ -8,6 +8,7 @@ from loguru import logger
 from app.application.commands import ProcessFilesCommand, StartDownloadCommand
 from app.application.ports import ExternalAPIClient, FileProcessor, ObjectStorage
 from app.application.unit_of_work import UnitOfWork
+from app.core.celery_app import celery_app
 from app.domain.entities.download_task import DownloadTask
 from app.domain.entities.file import File
 from app.domain.value_objects import FileHash, FileId, FileSize, StorageKey
@@ -35,6 +36,13 @@ class StartDownloadHandler:
             task_id=task_id,
             candidate_id=command.candidate_id,
         )
+
+        # Queue the Celery task to process files
+        celery_app.send_task(
+            "app.worker.celery_tasks.process_files_task",
+            args=[task_id, command.candidate_id],
+        )
+
         return task_id
 
 

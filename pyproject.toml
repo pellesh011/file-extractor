@@ -43,6 +43,7 @@ lint.select = ["E", "F", "I", "N", "W", "UP", "B", "SIM"]
 "__init__.py" = ["F401"]
 "app/presentation/api/routes.py" = ["B008"]
 "app/worker/celery_tasks.py" = ["B008"]
+"app/presentation/api/deps.py" = ["B008"]
 
 
 
