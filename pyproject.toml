@@ -57,6 +57,14 @@ disallow_any_unimported = false
 module = "app.worker.celery_tasks"
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = "tests"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
