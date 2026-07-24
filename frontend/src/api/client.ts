@@ -44,7 +44,7 @@ export const api = {
   },
 
   calculateStats: (fileIds: string[]) =>
-    request<{ overall: Record<string, number>; perFile: Record<string, Record<string, number>> }>(
+    request<{ overall: Record<string, number>; per_file: Record<string, Record<string, number>> }>(
       '/files/calculate',
       {
         method: 'POST',

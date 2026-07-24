@@ -125,15 +125,15 @@ export function FilesPage() {
     setStatsLoading(true);
     setStatsError(null);
 
-    try {
-      // The frontend calculates locally since we have the files loaded
-      // But we need to fetch content from backend
-      const res = await api.calculateStats(selectedFileIds);
-      setStats({
-        overall: res.overall,
-        perFile: res.perFile,
-      });
-      setShowStats(true);
+try {
+        // The frontend calculates locally since we have the files loaded
+        // But we need to fetch content from backend
+        const res = await api.calculateStats(selectedFileIds);
+        setStats({
+          overall: res.overall,
+          perFile: res.per_file,
+        });
+        setShowStats(true);
     } catch (err) {
       setStatsError(err instanceof Error ? err.message : 'Ошибка расчёта');
     } finally {
