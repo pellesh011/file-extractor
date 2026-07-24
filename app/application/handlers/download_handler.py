@@ -78,7 +78,7 @@ class ProcessFilesHandler:
 
             zip_stream = await self._api.download_files_stream(batch)
 
-            async for extracted in await self._processor.extract_stream(zip_stream):
+            async for extracted in self._processor.extract_stream(zip_stream):
                 file_hash = FileHash.compute(extracted.content)
                 storage_key = StorageKey(f"files/{extracted.filename}")
 

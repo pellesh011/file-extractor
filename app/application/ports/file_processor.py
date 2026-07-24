@@ -14,6 +14,4 @@ class ExtractedFile:
 
 class FileProcessor(ABC):
     @abstractmethod
-    async def extract_stream(
-        self, zip_stream: AsyncIterator[bytes]
-    ) -> AsyncIterator[ExtractedFile]: ...
+    def extract_stream(self, zip_stream: AsyncIterator[bytes]) -> AsyncIterator[ExtractedFile]: ...
