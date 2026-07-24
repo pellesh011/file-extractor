@@ -63,3 +63,17 @@ class S3Storage(ObjectStorage):
                 ExpiresIn=expires_in,
             )
             return url
+
+    async def download(self, key: str) -> str | None:
+        async with self._session.create_client(
+            "s3",
+            endpoint_url=self._endpoint,
+            aws_access_key_id=settings.s3_access_key_id,
+            aws_secret_access_key=settings.s3_secret_access_key,
+        ) as client:
+            try:
+                response = await client.get_object(Bucket=self._bucket, Key=key)
+                content_bytes: bytes = await response["Body"].read()
+                return content_bytes.decode("utf-8")
+            except Exception:
+                return None

@@ -7,3 +7,7 @@ class StartDownloadRequest(BaseModel):
 
 class StatisticsRequest(BaseModel):
     pass
+
+
+class CalculateStatsRequest(BaseModel):
+    file_ids: list[str] = Field(..., description="List of file IDs to calculate statistics for")

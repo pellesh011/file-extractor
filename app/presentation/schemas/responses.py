@@ -42,5 +42,10 @@ class StatisticsResponse(BaseModel):
     average_file_size: float = 0.0
 
 
+class CalculateStatsResponse(BaseModel):
+    overall: dict[str, int]
+    per_file: dict[str, dict[str, int]]
+
+
 class ErrorResponse(BaseModel):
     detail: str

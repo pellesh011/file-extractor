@@ -40,3 +40,4 @@ alembic/versions/*.pyc
 
 # Docker
 .docker/
+frontend/node_modules/

@@ -18,3 +18,6 @@ class ObjectStorage(ABC):
 
     @abstractmethod
     async def get_download_url(self, key: str, expires_in: int = 3600) -> str | None: ...
+
+    @abstractmethod
+    async def download(self, key: str) -> str | None: ...

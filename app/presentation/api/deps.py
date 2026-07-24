@@ -3,9 +3,14 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.handlers import StartDownloadHandler, StatisticsHandler
+from app.application.handlers import (
+    CalculateStatsHandler,
+    StartDownloadHandler,
+    StatisticsHandler,
+)
 from app.infrastructure.database.session import session_factory
 from app.infrastructure.database.sqlalchemy_uow import SQLAlchemyUnitOfWork
+from app.infrastructure.storage.s3_storage import S3Storage
 
 
 @asynccontextmanager
@@ -30,3 +35,9 @@ async def get_start_download_handler() -> StartDownloadHandler:
 async def get_statistics_handler() -> StatisticsHandler:
     uow = await get_uow()
     return StatisticsHandler(uow)
+
+
+async def get_calculate_stats_handler() -> CalculateStatsHandler:
+    uow = await get_uow()
+    storage = S3Storage()
+    return CalculateStatsHandler(uow, storage)

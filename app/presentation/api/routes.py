@@ -1,14 +1,24 @@
 from fastapi import APIRouter, Depends
 
 from app.application.commands import StartDownloadCommand
-from app.application.handlers import StartDownloadHandler
-from app.application.handlers.statistics_handler import StatisticsHandler
+from app.application.handlers import (
+    CalculateStatsHandler,
+    CalculateStatsQuery,
+    StartDownloadHandler,
+    StatisticsHandler,
+)
 from app.application.queries.get_statistics import GetStatisticsQuery
 from app.application.unit_of_work import UnitOfWork
 from app.domain.repositories.file_repository import FileFilters
-from app.presentation.api.deps import get_start_download_handler, get_statistics_handler, get_uow
-from app.presentation.schemas.requests import StartDownloadRequest
+from app.presentation.api.deps import (
+    get_calculate_stats_handler,
+    get_start_download_handler,
+    get_statistics_handler,
+    get_uow,
+)
+from app.presentation.schemas.requests import CalculateStatsRequest, StartDownloadRequest
 from app.presentation.schemas.responses import (
+    CalculateStatsResponse,
     DownloadTaskResponse,
     StatisticsResponse,
     TaskCreatedResponse,
@@ -93,4 +103,17 @@ async def get_statistics(
         uploaded_files=result.uploaded_files,
         failed_files=result.failed_files,
         average_file_size=result.average_file_size,
+    )
+
+
+@router.post("/api/files/calculate", response_model=CalculateStatsResponse)
+async def calculate_stats(
+    body: CalculateStatsRequest,
+    handler: CalculateStatsHandler = Depends(get_calculate_stats_handler),
+) -> CalculateStatsResponse:
+    query = CalculateStatsQuery(file_ids=body.file_ids)
+    result = await handler.execute(query)
+    return CalculateStatsResponse(
+        overall=result.total,
+        per_file=result.by_file,
     )
