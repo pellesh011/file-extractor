@@ -15,12 +15,13 @@ repos:
     rev: v1.11.0
     hooks:
       - id: mypy
-        args: [--strict, --ignore-missing-imports]
         additional_dependencies:
           - pydantic
+          - pydantic-settings
           - sqlalchemy
           - fastapi
           - types-redis
+        args: [--strict, --ignore-missing-imports, --no-namespace-packages]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
