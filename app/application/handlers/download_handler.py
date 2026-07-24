@@ -76,7 +76,7 @@ class ProcessFilesHandler:
             batch = names_result.file_names[:3]
             task.increase_received(len(names_result.file_names))
 
-            zip_stream = await self._api.download_files_stream(batch)
+            zip_stream = self._api.download_files_stream(batch)
 
             async for extracted in self._processor.extract_stream(zip_stream):
                 file_hash = FileHash.compute(extracted.content)
