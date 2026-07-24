@@ -6,6 +6,7 @@ celery_app = Celery(
     "file_extractor",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
+    include=["app.worker.celery_tasks"],
 )
 
 celery_app.conf.update(
@@ -17,4 +18,10 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    beat_schedule={
+        "dispatch-outbox-events": {
+            "task": "app.worker.celery_tasks.dispatch_outbox_events",
+            "schedule": settings.outbox_poll_interval_seconds,
+        },
+    },
 )

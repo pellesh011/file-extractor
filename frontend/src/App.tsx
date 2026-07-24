@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import { DownloadPage } from './pages/DownloadPage';
 import { FilesPage } from './pages/FilesPage';
 import './App.css';
@@ -24,16 +24,14 @@ function NavBar() {
 
 export function App() {
   return (
-    <BrowserRouter>
-      <div className="app">
-        <NavBar />
-        <main className="main-content">
-          <Routes>
-            <Route path="/" element={<DownloadPage />} />
-            <Route path="/files" element={<FilesPage />} />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <div className="app">
+      <NavBar />
+      <main className="main-content">
+        <Routes>
+          <Route path="/" element={<DownloadPage />} />
+          <Route path="/files" element={<FilesPage />} />
+        </Routes>
+      </main>
+    </div>
   );
 }

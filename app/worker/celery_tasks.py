@@ -4,7 +4,6 @@ import asyncio
 import json
 from datetime import UTC, datetime
 
-from celery import shared_task
 from loguru import logger
 from sqlalchemy import select
 
@@ -20,7 +19,7 @@ from app.infrastructure.processors.zip_processor import ZipProcessor
 from app.infrastructure.storage.s3_storage import S3Storage
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
 def process_files_task(
     self,
     task_id: str,
@@ -43,20 +42,19 @@ def process_files_task(
     asyncio.run(handler.execute(command))
 
 
-@celery_app.on_after_configure.connect
-def setup_periodic_tasks(sender, **kwargs) -> None:
-    sender.add_periodic_task(
-        settings.outbox_poll_interval_seconds,
-        dispatch_outbox_events.s(),
-        name="dispatch-outbox-events",
-    )
-
-
-@shared_task
+@celery_app.task
 def dispatch_outbox_events() -> None:
     async def _dispatch() -> None:
-        session = session_factory()
-        async with session:
+        # Create a fresh engine and session for this task to avoid concurrency issues
+        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+        engine = create_async_engine(
+            settings.database_url,
+            poolclass=None,  # No pooling for short-lived tasks
+        )
+        session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with session_maker() as session:
             result = await session.execute(
                 select(OutboxEventModel)
                 .where(OutboxEventModel.processed_at.is_(None))
@@ -84,5 +82,7 @@ def dispatch_outbox_events() -> None:
                     event.processed_at = datetime.now(UTC)
 
             await session.commit()
+
+        await engine.dispose()
 
     asyncio.run(_dispatch())
