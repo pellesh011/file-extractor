@@ -5,8 +5,8 @@ import json
 import os
 import random
 import tempfile
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, TypeVar, cast
 
 import aiofiles
 import httpx
@@ -21,6 +21,9 @@ def calculate_retry_delay(retry_after: int) -> float:
     base = retry_after * 1.1
     jitter = min(retry_after * 0.05, 10)
     return base + random.uniform(0, jitter)
+
+
+T = TypeVar("T")
 
 
 class CatalogClient(ExternalAPIClient):
@@ -125,7 +128,7 @@ class CatalogClient(ExternalAPIClient):
         self._rate_limiter.on_success()
         return data.get("marked_now", 0), data.get("already_marked", 0)
 
-    async def _with_retry(self, request_fn, operation_name: str):
+    async def _with_retry(self, request_fn: Callable[[], Awaitable[T]], operation_name: str) -> T:
         attempt = 0
         rate_attempt = 0
 
@@ -208,7 +211,7 @@ class CatalogClient(ExternalAPIClient):
 
 def _safe_json(response: httpx.Response, context: str = "") -> dict[str, Any]:
     try:
-        return response.json()
+        return cast("dict[str, Any]", response.json())
     except (json.JSONDecodeError, ValueError, TypeError) as e:
         raise ExternalAPIParseError(f"Invalid JSON in {context}: {e}") from e
 
