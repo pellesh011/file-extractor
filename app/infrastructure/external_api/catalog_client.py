@@ -10,18 +10,18 @@ import aiofiles
 import httpx
 from loguru import logger
 
-from app.application.exceptions import ExternalAPIBlockedError
-from app.application.ports.external_api import ExternalAPIClient, FileNamesResult
-from app.core.config import settings
-from app.infrastructure.external_api.exceptions import (
+from app.application.exceptions import (
+    ExternalAPIBlockedError,
     ExternalAPIForbiddenError,
     ExternalAPINotFoundError,
     ExternalAPIParseError,
     ExternalAPIRateLimitedError,
     ExternalAPIServerError,
 )
-from app.infrastructure.external_api.rate_limiter import AdaptiveRateLimiter
-from app.infrastructure.external_api.retry import AsyncRetryExecutor, with_retry
+from app.application.ports.external_api import ExternalAPIClient, FileNamesResult
+from app.core.config import settings
+from app.utils.rate_limiter import AdaptiveRateLimiter
+from app.utils.retry import AsyncRetryExecutor, with_retry
 
 
 class CatalogClient(ExternalAPIClient):

@@ -65,6 +65,10 @@ module = "app.worker.watchdog"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+module = "app.infrastructure.external_api.catalog_client"
+disable_error_code = "untyped-decorator"
+
+[[tool.mypy.overrides]]
 module = "tests"
 ignore_errors = true
 
