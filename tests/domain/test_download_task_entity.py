@@ -44,6 +44,18 @@ class TestTaskLifecycle:
         assert task.status == TaskStatus.SUCCESS
         assert task.finished_at is not None
 
+    def test_decrease_received(self, task: DownloadTask) -> None:
+        task.claim("worker-1")
+        task.increase_received(10)
+        task.decrease_received(3)
+        assert task.received_files == 7
+
+    def test_decrease_received_below_zero(self, task: DownloadTask) -> None:
+        task.claim("worker-1")
+        task.increase_received(5)
+        task.decrease_received(10)
+        assert task.received_files == 0
+
     def test_increase_received_and_processed(self, task: DownloadTask) -> None:
         task.claim("worker-1")
         task.increase_received(10)

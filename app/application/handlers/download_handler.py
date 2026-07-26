@@ -164,16 +164,17 @@ class ProcessFilesHandler:
 
             try:
                 await self._api.mark_downloaded(batch, command.candidate_id)
+                task.increase_processed(len(batch))
             except ExternalAPIBlockedError as block_err:
                 await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 if await self._handle_block(task, block_err):
                     return
                 raise
             except Exception:
                 await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 raise
-
-            task.increase_processed(len(batch))
 
             async with self._uow:
                 await self._uow.task_repo.update(task)
