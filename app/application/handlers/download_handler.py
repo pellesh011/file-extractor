@@ -87,6 +87,9 @@ class ProcessFilesHandler:
                 else:
                     pending.extend(names_result.file_names)
                     task.increase_received(len(names_result.file_names))
+                    async with self._uow:
+                        await self._uow.task_repo.update(task)
+                        await self._uow.commit()
 
             batch = pending[:3]
             pending = pending[3:]
