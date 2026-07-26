@@ -45,3 +45,6 @@ class TaskRepository(ABC):
     async def record_downloaded_file(
         self, task_id: str, filename: str, file_hash: FileHash
     ) -> None: ...
+
+    @abstractmethod
+    async def delete_downloaded_file(self, task_id: str, filename: str) -> None: ...

@@ -6,13 +6,13 @@ from uuid import uuid4
 from loguru import logger
 
 from app.application.commands import ProcessFilesCommand, StartDownloadCommand
+from app.application.exceptions import ExternalAPIBlockedError
 from app.application.ports import ExternalAPIClient, FileProcessor, ObjectStorage
 from app.application.unit_of_work import UnitOfWork
 from app.core.celery_app import celery_app
 from app.domain.entities.download_task import DownloadTask
 from app.domain.entities.file import File
 from app.domain.value_objects import FileHash, FileId, FileSize, StorageKey
-from app.infrastructure.external_api.exceptions import ExternalAPIBlockedError
 
 
 class StartDownloadHandler:
@@ -84,7 +84,12 @@ class ProcessFilesHandler:
 
         while True:
             if len(pending) < 3:
-                names_result = await self._api.get_file_names(command.candidate_id)
+                try:
+                    names_result = await self._api.get_file_names(command.candidate_id)
+                except ExternalAPIBlockedError as block_err:
+                    if await self._handle_block(task, block_err):
+                        return
+                    raise
                 if not names_result.file_names:
                     if not pending:
                         break
@@ -160,12 +165,12 @@ class ProcessFilesHandler:
             try:
                 await self._api.mark_downloaded(batch, command.candidate_id)
             except ExternalAPIBlockedError as block_err:
-                await self._cleanup_batch_files(batch_file_entities)
+                await self._cleanup_batch_files(task.id, batch_file_entities)
                 if await self._handle_block(task, block_err):
                     return
                 raise
             except Exception:
-                await self._cleanup_batch_files(batch_file_entities)
+                await self._cleanup_batch_files(task.id, batch_file_entities)
                 raise
 
             task.increase_processed(len(batch))
@@ -211,7 +216,7 @@ class ProcessFilesHandler:
         )
         return True
 
-    async def _cleanup_batch_files(self, files: list[File]) -> None:
+    async def _cleanup_batch_files(self, task_id: str, files: list[File]) -> None:
         for file_entity in files:
             if file_entity.storage_key is None:
                 continue
@@ -226,6 +231,7 @@ class ProcessFilesHandler:
             try:
                 async with self._uow:
                     await self._uow.file_repo.delete(file_entity.id)
+                    await self._uow.task_repo.delete_downloaded_file(task_id, file_entity.filename)
                     await self._uow.commit()
             except Exception as e:
                 logger.warning(

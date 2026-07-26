@@ -7,13 +7,13 @@ from typing import Any, TypeVar
 
 from loguru import logger
 
-from app.infrastructure.external_api.exceptions import (
-    ExternalAPIBlockedError,
+from app.application.exceptions import (
     ExternalAPIRateLimitedError,
     ExternalAPIServerError,
 )
 
-T = TypeVar("T")
+F = TypeVar("F", bound=Callable[..., Any])
+R = TypeVar("R")
 
 
 def _calculate_retry_delay(retry_after: int) -> float:
@@ -35,9 +35,9 @@ class AsyncRetryExecutor:
 
     async def execute(
         self,
-        fn: Callable[[], Awaitable[T]],
+        fn: Callable[[], Awaitable[R]],
         operation_name: str,
-    ) -> T:
+    ) -> R:
         attempt = 0
         rate_attempt = 0
 
@@ -51,22 +51,6 @@ class AsyncRetryExecutor:
                 if self._retry_exhausted(rate_attempt, self._rate_limit_retries):
                     logger.error(
                         f"{operation_name}_rate_limit_exhausted",
-                        attempt=rate_attempt,
-                    )
-                    raise
-
-                await self._sleep_rate_limit(
-                    operation_name,
-                    rate_attempt,
-                    e.retry_after,
-                )
-
-            except ExternalAPIBlockedError as e:
-                rate_attempt += 1
-
-                if self._retry_exhausted(rate_attempt, self._rate_limit_retries):
-                    logger.error(
-                        f"{operation_name}_blocked_exhausted",
                         attempt=rate_attempt,
                     )
                     raise
@@ -120,8 +104,8 @@ class AsyncRetryExecutor:
         return limit >= 0 and attempt > limit
 
 
-def with_retry(operation_name: str | None = None) -> Callable[..., Any]:
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+def with_retry(operation_name: str | None = None) -> Callable[[F], F]:
+    def decorator(func: F) -> F:
         async def wrapper(self: object, *args: Any, **kwargs: Any) -> Any:
             executor: AsyncRetryExecutor = self._retry  # type: ignore[attr-defined]
             return await executor.execute(
@@ -129,6 +113,6 @@ def with_retry(operation_name: str | None = None) -> Callable[..., Any]:
                 operation_name or func.__name__,
             )
 
-        return wrapper
+        return wrapper  # type: ignore[return-value]
 
     return decorator
