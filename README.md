@@ -43,6 +43,8 @@ docker compose up --build
 - **worker** — Celery worker
 - **frontend** (5173) — React SPA
 
+> **Важно:** после первого запуска создайте bucket в MinIO. Откройте консоль MinIO (http://localhost:9001), войдите (`minioadmin` / `minioadmin`) и создайте bucket с именем, указанным в `S3_BUCKET_NAME` (по умолчанию `files`).
+
 ## API-эндпоинты
 
 | Метод | Путь | Описание |
