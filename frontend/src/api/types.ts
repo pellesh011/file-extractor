@@ -14,6 +14,8 @@ export interface TaskStatusResponse {
   error: string | null;
   started_at: string | null;
   finished_at: string | null;
+  blocked_until: string | null;
+  block_reason: string | null;
 }
 
 export interface FileItem {
