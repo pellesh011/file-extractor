@@ -165,12 +165,12 @@ class ProcessFilesHandler:
             try:
                 await self._api.mark_downloaded(batch, command.candidate_id)
             except ExternalAPIBlockedError as block_err:
-                await self._cleanup_batch_files(batch_file_entities)
+                await self._cleanup_batch_files(task.id, batch_file_entities)
                 if await self._handle_block(task, block_err):
                     return
                 raise
             except Exception:
-                await self._cleanup_batch_files(batch_file_entities)
+                await self._cleanup_batch_files(task.id, batch_file_entities)
                 raise
 
             task.increase_processed(len(batch))
@@ -216,7 +216,7 @@ class ProcessFilesHandler:
         )
         return True
 
-    async def _cleanup_batch_files(self, files: list[File]) -> None:
+    async def _cleanup_batch_files(self, task_id: str, files: list[File]) -> None:
         for file_entity in files:
             if file_entity.storage_key is None:
                 continue
@@ -231,6 +231,7 @@ class ProcessFilesHandler:
             try:
                 async with self._uow:
                     await self._uow.file_repo.delete(file_entity.id)
+                    await self._uow.task_repo.delete_downloaded_file(task_id, file_entity.filename)
                     await self._uow.commit()
             except Exception as e:
                 logger.warning(

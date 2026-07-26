@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.download_task import DownloadTask
@@ -250,6 +250,14 @@ class SQLAlchemyTaskRepository(TaskRepositoryInterface):
                 task_id=task_id,
                 file_name=filename,
                 hash=str(file_hash),
+            )
+        )
+
+    async def delete_downloaded_file(self, task_id: str, filename: str) -> None:
+        await self._session.execute(
+            delete(DownloadedFileModel).where(
+                DownloadedFileModel.task_id == task_id,
+                DownloadedFileModel.file_name == filename,
             )
         )
 
