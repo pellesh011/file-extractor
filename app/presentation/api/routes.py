@@ -27,6 +27,26 @@ from app.presentation.schemas.responses import (
 router = APIRouter()
 
 
+@router.get("/api/tasks")
+async def list_tasks(
+    uow: UnitOfWork = Depends(get_uow),
+) -> list[DownloadTaskResponse]:
+    async with uow:
+        tasks = await uow.task_repo.list(limit=10, offset=0)
+    return [
+        DownloadTaskResponse(
+            task_id=t.id,
+            status=t.status.name,
+            received_files=t.received_files,
+            processed_files=t.processed_files,
+            error=t.error,
+            started_at=t.started_at,
+            finished_at=t.finished_at,
+        )
+        for t in tasks
+    ]
+
+
 @router.post("/api/download/start", response_model=TaskCreatedResponse)
 async def start_download(
     body: StartDownloadRequest,

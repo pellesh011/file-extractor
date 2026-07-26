@@ -43,6 +43,9 @@ export const api = {
     return request<FilesResponse>(`/files${query ? `?${query}` : ''}`);
   },
 
+  getTasks: () =>
+    request<TaskStatusResponse[]>('/tasks'),
+
   calculateStats: (fileIds: string[]) =>
     request<{ overall: Record<string, number>; per_file: Record<string, Record<string, number>> }>(
       '/files/calculate',

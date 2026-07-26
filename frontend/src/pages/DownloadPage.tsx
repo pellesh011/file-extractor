@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
+import type { TaskStatusResponse } from '../api/types';
 import { formatDate } from '../utils/date';
 
 type DownloadStatus = 'idle' | 'running' | 'completed' | 'error';
@@ -27,6 +28,32 @@ function getStatusColor(status: string): string {
   }
 }
 
+function statusBadgeClass(status: string): string {
+  switch (status) {
+    case 'RUNNING':
+      return 'running';
+    case 'COMPLETED':
+      return 'completed';
+    case 'FAILED':
+      return 'failed';
+    default:
+      return 'created';
+  }
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'RUNNING':
+      return 'Выполняется';
+    case 'COMPLETED':
+      return 'Завершено';
+    case 'FAILED':
+      return 'Ошибка';
+    default:
+      return status;
+  }
+}
+
 export function DownloadPage() {
   const [state, setState] = useState<DownloadPageState>({
     status: 'idle',
@@ -39,6 +66,8 @@ export function DownloadPage() {
   });
 
   const [pollInterval, setPollInterval] = useState<number | null>(null);
+  const [tasks, setTasks] = useState<TaskStatusResponse[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
 
   const clearPoll = useCallback(() => {
     if (pollInterval) {
@@ -96,9 +125,30 @@ export function DownloadPage() {
     }
   };
 
+  const fetchTasks = useCallback(async () => {
+    try {
+      const result = await api.getTasks();
+      setTasks(result);
+    } catch {
+      // ignore fetch errors
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
   useEffect(() => {
     return () => clearPoll();
   }, [clearPoll]);
+
+  useEffect(() => {
+    if (state.status === 'completed' || state.status === 'error') {
+      fetchTasks();
+    }
+  }, [state.status, fetchTasks]);
 
   const isRunning = state.status === 'running';
   const isCompleted = state.status === 'completed';
@@ -178,6 +228,55 @@ export function DownloadPage() {
                 </div>
               )}
             </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 24 }}>
+        <div className="card-header">
+          <h2>История скачиваний</h2>
+        </div>
+        <div className="card-body">
+          {tasksLoading ? (
+            <div className="loading">Загрузка...</div>
+          ) : tasks.length === 0 ? (
+            <p style={{ color: '#666' }}>Пока нет завершённых скачиваний.</p>
+          ) : (
+            <>
+              <div className="table-responsive">
+                <table className="files-table">
+                  <thead>
+                    <tr>
+                      <th>Время старта (НСК)</th>
+                      <th>Статус</th>
+                      <th>Получено</th>
+                      <th>Обработано</th>
+                      <th>Ошибка</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tasks.map(t => (
+                      <tr key={t.task_id}>
+                        <td>{formatDate(t.started_at)}</td>
+                        <td>
+                          <span className={`status-badge ${statusBadgeClass(t.status)}`}>
+                            {statusLabel(t.status)}
+                          </span>
+                        </td>
+                        <td>{t.received_files}</td>
+                        <td>{t.processed_files}</td>
+                        <td style={{ color: '#991b1b', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.error || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p style={{ marginTop: 12, fontSize: '0.8125rem', color: '#999' }}>
+                Показаны последние 10 скачиваний. Для полной истории обратитесь к администратору.
+              </p>
+            </>
           )}
         </div>
       </div>
