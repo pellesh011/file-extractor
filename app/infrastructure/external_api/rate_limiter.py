@@ -9,7 +9,7 @@ class AdaptiveRateLimiter:
     def __init__(
         self,
         initial_delay: float = 1,
-        min_delay: float = 0.1,
+        min_delay: float = 0.3,
         max_delay: float = 10.0,
     ) -> None:
         self._delay = initial_delay
@@ -21,7 +21,7 @@ class AdaptiveRateLimiter:
 
     def on_success(self) -> None:
         old = self._delay
-        self._delay = max(self._min_delay, self._delay * 0.5)
+        self._delay = max(self._min_delay, self._delay * 0.9)
         if self._delay != old:
             logger.debug("adaptive_limiter_decreased", delay=self._delay)
 
