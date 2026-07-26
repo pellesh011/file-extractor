@@ -16,18 +16,18 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = "minioadmin123"
     s3_bucket_name: str = "files"
 
+    candidate_id: str | None = None
+
     external_api_base_url: str = "http://localhost:8080"
     external_api_timeout_seconds: int = 30
-    external_api_max_retries: int = 3
+    external_api_max_retries: int = 5
+    external_api_rate_limit_retries: int = 50
 
     log_level: str = "INFO"
     log_format: str = "structured"
 
     celery_broker_url: str = "redis://localhost:6379/0"
     celery_result_backend: str = "redis://localhost:6379/0"
-
-    outbox_poll_interval_seconds: int = 5
-    outbox_max_events_per_batch: int = 50
 
 
 settings = Settings()
