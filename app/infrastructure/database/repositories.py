@@ -66,6 +66,11 @@ class SQLAlchemyFileRepository(FileRepositoryInterface):
             per_page=per_page,
         )
 
+    async def delete(self, file_id: FileId) -> None:
+        model = await self._session.get(FileModel, file_id.value)
+        if model:
+            await self._session.delete(model)
+
     async def count_by_status(self, status: str) -> int:
         query = select(func.count()).select_from(FileModel)
         if status:
