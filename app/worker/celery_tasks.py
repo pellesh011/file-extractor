@@ -12,13 +12,12 @@ from app.infrastructure.processors.zip_processor import ZipProcessor
 from app.infrastructure.storage.s3_storage import S3Storage
 
 
-@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
+@celery_app.task(bind=True, acks_late=True, max_retries=3, default_retry_delay=10)
 def process_files_task(
     self,
     task_id: str,
     candidate_id: str | None = None,
 ) -> None:
-
     async def _execute() -> None:
         async_session_maker, engine = create_session_factory()
         try:
