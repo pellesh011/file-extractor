@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import type { TaskStatusResponse } from '../api/types';
 import { formatDate } from '../utils/date';
 
-type DownloadStatus = 'idle' | 'running' | 'completed' | 'error';
+type DownloadStatus = 'idle' | 'running' | 'blocked' | 'completed' | 'error';
 
 interface DownloadPageState {
   status: DownloadStatus;
@@ -13,6 +13,8 @@ interface DownloadPageState {
   processedFiles: number;
   totalFiles: number;
   error: string | null;
+  blockedUntil: string | null;
+  blockReason: string | null;
 }
 
 function getStatusColor(status: string): string {
@@ -23,6 +25,8 @@ function getStatusColor(status: string): string {
       return 'status-success';
     case 'FAILED':
       return 'status-error';
+    case 'BLOCKED':
+      return 'status-warning';
     default:
       return '';
   }
@@ -36,6 +40,8 @@ function statusBadgeClass(status: string): string {
       return 'completed';
     case 'FAILED':
       return 'failed';
+    case 'BLOCKED':
+      return 'blocked';
     default:
       return 'created';
   }
@@ -49,6 +55,8 @@ function statusLabel(status: string): string {
       return 'Завершено';
     case 'FAILED':
       return 'Ошибка';
+    case 'BLOCKED':
+      return 'Заблокировано';
     default:
       return status;
   }
@@ -63,6 +71,8 @@ export function DownloadPage() {
     processedFiles: 0,
     totalFiles: 0,
     error: null,
+    blockedUntil: null,
+    blockReason: null,
   });
 
   const [pollInterval, setPollInterval] = useState<number | null>(null);
@@ -91,6 +101,8 @@ export function DownloadPage() {
         processedFiles: 0,
         totalFiles: 0,
         error: null,
+        blockedUntil: null,
+        blockReason: null,
       });
 
       const interval = setInterval(async () => {
@@ -103,8 +115,11 @@ export function DownloadPage() {
             processedFiles: task.processed_files,
             totalFiles: task.received_files,
             status: task.status === 'COMPLETED' ? 'completed' :
-                    task.status === 'FAILED' ? 'error' : 'running',
+                    task.status === 'FAILED' ? 'error' :
+                    task.status === 'BLOCKED' ? 'blocked' : 'running',
             error: task.error || null,
+            blockedUntil: task.blocked_until || null,
+            blockReason: task.block_reason || null,
           }));
 
           if (task.status === 'COMPLETED' || task.status === 'FAILED') {
@@ -145,12 +160,13 @@ export function DownloadPage() {
   }, [clearPoll]);
 
   useEffect(() => {
-    if (state.status === 'completed' || state.status === 'error') {
+    if (state.status === 'completed' || state.status === 'error' || state.status === 'blocked') {
       fetchTasks();
     }
   }, [state.status, fetchTasks]);
 
   const isRunning = state.status === 'running';
+  const isBlocked = state.status === 'blocked';
   const isCompleted = state.status === 'completed';
   const isError = state.status === 'error';
 
@@ -192,6 +208,7 @@ export function DownloadPage() {
                   <span className="label">Статус:</span>
                   <span className={`status-badge ${getStatusColor(state.status.toUpperCase())}`}>
                     {state.status === 'running' ? 'Скачиваю...' :
+                     state.status === 'blocked' ? 'Заблокировано' :
                      state.status === 'completed' ? 'Завершено' :
                      state.status === 'error' ? 'Ошибка' : 'Ожидание'}
                   </span>
@@ -213,6 +230,15 @@ export function DownloadPage() {
                   <p className="progress-text">
                     {state.processedFiles} из {state.totalFiles} скачано
                   </p>
+                </div>
+              )}
+
+              {isBlocked && (
+                <div className="warning-message">
+                  <p><strong>Заблокировано:</strong> {state.blockReason || 'Внешний API недоступен'}</p>
+                  {state.blockedUntil && (
+                    <p><strong>Возобновится:</strong> {formatDate(state.blockedUntil)}</p>
+                  )}
                 </div>
               )}
 
@@ -240,7 +266,7 @@ export function DownloadPage() {
           {tasksLoading ? (
             <div className="loading">Загрузка...</div>
           ) : tasks.length === 0 ? (
-            <p style={{ color: '#666' }}>Пока нет завершённых скачиваний.</p>
+            <p style={{ color: '#666' }}>Пока нет скачиваний.</p>
           ) : (
             <>
               <div className="table-responsive">
@@ -252,6 +278,7 @@ export function DownloadPage() {
                       <th>Получено</th>
                       <th>Обработано</th>
                       <th>Ошибка</th>
+                      <th>Возобновится</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -267,6 +294,9 @@ export function DownloadPage() {
                         <td>{t.processed_files}</td>
                         <td style={{ color: '#991b1b', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {t.error || '—'}
+                        </td>
+                        <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.blocked_until ? formatDate(t.blocked_until) : '—'}
                         </td>
                       </tr>
                     ))}
