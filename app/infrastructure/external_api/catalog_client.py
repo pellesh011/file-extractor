@@ -159,7 +159,6 @@ class CatalogClient(ExternalAPIClient):
                 )
                 await asyncio.sleep(calculate_retry_delay(e.retry_after))
             except (TimeoutError, httpx.HTTPError, ExternalAPIServerError) as e:
-
                 attempt += 1
                 if attempt > self._max_retries:
                     logger.error(f"{operation_name}_failed", error=str(e))
