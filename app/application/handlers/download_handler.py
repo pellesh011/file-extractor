@@ -12,6 +12,7 @@ from app.core.celery_app import celery_app
 from app.domain.entities.download_task import DownloadTask
 from app.domain.entities.file import File
 from app.domain.value_objects import FileHash, FileId, FileSize, StorageKey
+from app.infrastructure.external_api.exceptions import ExternalAPIBlockedError
 
 
 class StartDownloadHandler:
@@ -25,7 +26,6 @@ class StartDownloadHandler:
             task_id=task_id,
             candidate_id=command.candidate_id or "",
         )
-        task.start()
 
         async with self._uow:
             await self._uow.task_repo.add(task)
@@ -35,9 +35,9 @@ class StartDownloadHandler:
             "download_task_created",
             task_id=task_id,
             candidate_id=command.candidate_id,
+            status=task.status.name,
         )
 
-        # Queue the Celery task to process files
         celery_app.send_task(
             "app.worker.celery_tasks.process_files_task",
             args=[task_id, command.candidate_id],
@@ -47,6 +47,9 @@ class StartDownloadHandler:
 
 
 class ProcessFilesHandler:
+    HEARTBEAT_INTERVAL = 30
+    BLOCK_THRESHOLD_SECONDS = 60
+
     def __init__(
         self,
         uow: UnitOfWork,
@@ -77,6 +80,7 @@ class ProcessFilesHandler:
 
     async def _run(self, task: DownloadTask, command: ProcessFilesCommand) -> None:
         pending: list[str] = []
+        heartbeat_counter = 0
 
         while True:
             if len(pending) < 3:
@@ -87,14 +91,35 @@ class ProcessFilesHandler:
                 else:
                     pending.extend(names_result.file_names)
                     task.increase_received(len(names_result.file_names))
+                    async with self._uow:
+                        await self._uow.task_repo.update(task)
+                        await self._uow.commit()
 
             batch = pending[:3]
             pending = pending[3:]
 
-            zip_stream = self._api.download_files_stream(batch)
+            try:
+                zip_stream = self._api.download_files_stream(batch)
+            except ExternalAPIBlockedError as block_err:
+                if await self._handle_block(task, block_err):
+                    return
+                raise
+            except Exception:
+                raise
 
             batch_file_entities: list[File] = []
             async for extracted in self._processor.extract_stream(zip_stream):
+                await self._maybe_heartbeat(task, heartbeat_counter)
+                heartbeat_counter += 1
+
+                if await self._uow.task_repo.downloaded_file_exists(task.id, extracted.filename):
+                    logger.info(
+                        "file_already_downloaded_skipping",
+                        task_id=task.id,
+                        filename=extracted.filename,
+                    )
+                    continue
+
                 file_hash = FileHash.compute(extracted.content)
                 storage_key = StorageKey(f"files/{extracted.filename}")
 
@@ -118,6 +143,9 @@ class ProcessFilesHandler:
 
                 async with self._uow:
                     await self._uow.file_repo.add(file_entity)
+                    await self._uow.task_repo.record_downloaded_file(
+                        task.id, extracted.filename, file_hash
+                    )
                     await self._uow.commit()
 
                 batch_file_entities.append(file_entity)
@@ -131,6 +159,11 @@ class ProcessFilesHandler:
 
             try:
                 await self._api.mark_downloaded(batch, command.candidate_id)
+            except ExternalAPIBlockedError as block_err:
+                await self._cleanup_batch_files(batch_file_entities)
+                if await self._handle_block(task, block_err):
+                    return
+                raise
             except Exception:
                 await self._cleanup_batch_files(batch_file_entities)
                 raise
@@ -152,6 +185,31 @@ class ProcessFilesHandler:
             received=task.received_files,
             processed=task.processed_files,
         )
+
+    async def _maybe_heartbeat(self, task: DownloadTask, counter: int) -> None:
+        if counter % self.HEARTBEAT_INTERVAL == 0:
+            task.heartbeat()
+            async with self._uow:
+                await self._uow.task_repo.update(task)
+                await self._uow.commit()
+
+    async def _handle_block(self, task: DownloadTask, exc: ExternalAPIBlockedError) -> bool:
+        retry_after = exc.retry_after
+        if retry_after <= self.BLOCK_THRESHOLD_SECONDS:
+            return False
+
+        task.block(retry_after, reason=str(exc))
+        async with self._uow:
+            await self._uow.task_repo.update(task)
+            await self._uow.commit()
+
+        logger.warning(
+            "task_blocked",
+            task_id=task.id,
+            blocked_until=str(task.blocked_until),
+            retry_after=retry_after,
+        )
+        return True
 
     async def _cleanup_batch_files(self, files: list[File]) -> None:
         for file_entity in files:

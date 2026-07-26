@@ -9,6 +9,7 @@ from app.application.handlers import (
 )
 from app.application.queries.get_statistics import GetStatisticsQuery
 from app.application.unit_of_work import UnitOfWork
+from app.domain.entities.download_task import DownloadTask
 from app.domain.repositories.file_repository import FileFilters
 from app.presentation.api.deps import (
     get_calculate_stats_handler,
@@ -27,24 +28,29 @@ from app.presentation.schemas.responses import (
 router = APIRouter()
 
 
+def _task_to_response(t: DownloadTask) -> DownloadTaskResponse:
+    return DownloadTaskResponse(
+        task_id=t.id,
+        status=t.status.name,
+        received_files=t.received_files,
+        processed_files=t.processed_files,
+        error=t.error,
+        started_at=t.started_at,
+        finished_at=t.finished_at,
+        worker_id=t.worker_id,
+        attempts=t.attempts,
+        blocked_until=t.blocked_until,
+        block_reason=t.block_reason,
+    )
+
+
 @router.get("/api/tasks")
 async def list_tasks(
     uow: UnitOfWork = Depends(get_uow),
 ) -> list[DownloadTaskResponse]:
     async with uow:
-        tasks = await uow.task_repo.list(limit=10, offset=0)
-    return [
-        DownloadTaskResponse(
-            task_id=t.id,
-            status=t.status.name,
-            received_files=t.received_files,
-            processed_files=t.processed_files,
-            error=t.error,
-            started_at=t.started_at,
-            finished_at=t.finished_at,
-        )
-        for t in tasks
-    ]
+        tasks = await uow.task_repo.list_tasks(limit=10, offset=0)
+    return [_task_to_response(t) for t in tasks]
 
 
 @router.post("/api/download/start", response_model=TaskCreatedResponse)
@@ -68,15 +74,7 @@ async def get_task_status(
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail="Task not found")
-    return DownloadTaskResponse(
-        task_id=task.id,
-        status=task.status.name,
-        received_files=task.received_files,
-        processed_files=task.processed_files,
-        error=task.error,
-        started_at=task.started_at,
-        finished_at=task.finished_at,
-    )
+    return _task_to_response(task)
 
 
 @router.get("/api/files")

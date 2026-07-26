@@ -23,6 +23,18 @@ services:
     volumes:
       - ./app:/app/app
 
+  beat:
+    build:
+      context: .
+    command: celery -A app.core.celery_app beat --loglevel=info
+    environment:
+      DEBUGPY_ENABLE: "1"
+      DEBUGPY_PORT: "5680"
+    ports:
+      - "5680:5680"
+    volumes:
+      - ./app:/app/app
+
   frontend:
     build:
       context: ./frontend

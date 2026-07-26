@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities.download_task import DownloadTask
@@ -10,7 +12,7 @@ from app.domain.repositories import PaginatedFiles
 from app.domain.repositories.file_repository import FileFilters as FileDomainFilters
 from app.domain.repositories.task_repository import TaskRepository as TaskRepositoryInterface
 from app.domain.value_objects import FileHash, FileId, FileSize, FileStatus, StorageKey
-from app.infrastructure.database.models import DownloadTaskModel, FileModel
+from app.infrastructure.database.models import DownloadedFileModel, DownloadTaskModel, FileModel
 
 
 class SQLAlchemyFileRepository(FileRepositoryInterface):
@@ -127,8 +129,13 @@ class SQLAlchemyTaskRepository(TaskRepositoryInterface):
         model.error = task.error
         model.started_at = task.started_at
         model.finished_at = task.finished_at
+        model.worker_id = task.worker_id
+        model.last_heartbeat = task.last_heartbeat
+        model.attempts = task.attempts
+        model.blocked_until = task.blocked_until
+        model.block_reason = task.block_reason
 
-    async def list(self, limit: int = 20, offset: int = 0) -> list[DownloadTask]:
+    async def list_tasks(self, limit: int = 20, offset: int = 0) -> list[DownloadTask]:
         result = await self._session.execute(
             select(DownloadTaskModel)
             .order_by(DownloadTaskModel.started_at.desc())
@@ -137,6 +144,114 @@ class SQLAlchemyTaskRepository(TaskRepositoryInterface):
         )
         models = result.scalars().all()
         return [self._to_domain(m) for m in models]
+
+    async def claim(self, task_id: str, worker_id: str) -> DownloadTask | None:
+        now = datetime.now(UTC)
+        stmt = (
+            update(DownloadTaskModel)
+            .where(
+                DownloadTaskModel.id == task_id,
+                DownloadTaskModel.status == "PENDING",
+            )
+            .values(
+                status="RUNNING",
+                worker_id=worker_id,
+                started_at=now,
+                last_heartbeat=now,
+                attempts=DownloadTaskModel.attempts + 1,
+                error=None,
+                blocked_until=None,
+                block_reason=None,
+            )
+            .returning(DownloadTaskModel)
+        )
+        result = await self._session.execute(stmt)
+        row = result.fetchone()
+        if row is None:
+            return None
+        return self._to_domain(row[0])
+
+    async def update_heartbeat(self, task_id: str) -> None:
+        now = datetime.now(UTC)
+        await self._session.execute(
+            update(DownloadTaskModel)
+            .where(
+                DownloadTaskModel.id == task_id,
+                DownloadTaskModel.status == "RUNNING",
+            )
+            .values(last_heartbeat=now)
+        )
+
+    async def reclaim_stuck(
+        self, max_heartbeat_age: timedelta, limit: int = 10
+    ) -> list[DownloadTask]:
+        cutoff = datetime.now(UTC) - max_heartbeat_age
+        subq = (
+            select(DownloadTaskModel.id)
+            .where(
+                DownloadTaskModel.status == "RUNNING",
+                DownloadTaskModel.last_heartbeat < cutoff,
+            )
+            .limit(limit)
+            .subquery()
+        )
+        result = await self._session.execute(
+            update(DownloadTaskModel)
+            .where(DownloadTaskModel.id.in_(select(subq.c.id)))
+            .values(
+                status="PENDING",
+                worker_id=None,
+                last_heartbeat=None,
+                blocked_until=None,
+                block_reason=None,
+            )
+            .returning(DownloadTaskModel)
+        )
+        return [self._to_domain(row[0]) for row in result.fetchall()]
+
+    async def reclaim_blocked(self, limit: int = 10) -> list[DownloadTask]:
+        now = datetime.now(UTC)
+        subq = (
+            select(DownloadTaskModel.id)
+            .where(
+                DownloadTaskModel.status == "BLOCKED",
+                DownloadTaskModel.blocked_until < now,
+            )
+            .limit(limit)
+            .subquery()
+        )
+        result = await self._session.execute(
+            update(DownloadTaskModel)
+            .where(DownloadTaskModel.id.in_(select(subq.c.id)))
+            .values(
+                status="PENDING",
+                worker_id=None,
+                blocked_until=None,
+                block_reason=None,
+            )
+            .returning(DownloadTaskModel)
+        )
+        return [self._to_domain(row[0]) for row in result.fetchall()]
+
+    async def downloaded_file_exists(self, task_id: str, filename: str) -> bool:
+        result = await self._session.execute(
+            select(DownloadedFileModel).where(
+                DownloadedFileModel.task_id == task_id,
+                DownloadedFileModel.file_name == filename,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def record_downloaded_file(
+        self, task_id: str, filename: str, file_hash: FileHash
+    ) -> None:
+        self._session.add(
+            DownloadedFileModel(
+                task_id=task_id,
+                file_name=filename,
+                hash=str(file_hash),
+            )
+        )
 
     @staticmethod
     def _to_model(task: DownloadTask) -> DownloadTaskModel:
@@ -149,6 +264,11 @@ class SQLAlchemyTaskRepository(TaskRepositoryInterface):
             error=task.error,
             started_at=task.started_at,
             finished_at=task.finished_at,
+            worker_id=task.worker_id,
+            last_heartbeat=task.last_heartbeat,
+            attempts=task.attempts,
+            blocked_until=task.blocked_until,
+            block_reason=task.block_reason,
         )
 
     @staticmethod
@@ -164,4 +284,9 @@ class SQLAlchemyTaskRepository(TaskRepositoryInterface):
             error=model.error,
             started_at=model.started_at,
             finished_at=model.finished_at,
+            worker_id=model.worker_id,
+            last_heartbeat=model.last_heartbeat,
+            attempts=model.attempts,
+            blocked_until=model.blocked_until,
+            block_reason=model.block_reason,
         )
