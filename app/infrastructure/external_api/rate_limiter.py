@@ -8,7 +8,7 @@ from loguru import logger
 class AdaptiveRateLimiter:
     def __init__(
         self,
-        initial_delay: float = 0.5,
+        initial_delay: float = 1,
         min_delay: float = 0.3,
         max_delay: float = 10.0,
     ) -> None:
@@ -27,6 +27,6 @@ class AdaptiveRateLimiter:
 
     def on_failure(self) -> None:
         old = self._delay
-        self._delay = min(self._max_delay, self._delay * 2)
+        self._delay = min(self._max_delay, self._delay * 2.5)
         if self._delay != old:
             logger.debug("adaptive_limiter_increased", delay=self._delay)
