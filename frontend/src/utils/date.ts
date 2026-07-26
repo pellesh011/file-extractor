@@ -1,17 +1,10 @@
-import { format as formatDateFn, formatDistanceToNow } from 'date-fns';
-
-function toMoscowTime(date: Date): Date {
-  // Convert to Moscow time (UTC+3)
-  const offset = 3 * 60 * 60 * 1000; // 3 hours in milliseconds
-  return new Date(date.getTime() + offset);
-}
+import { formatDistanceToNow } from 'date-fns';
+import { formatInTimeZone } from 'date-fns-tz';
 
 export function formatDate(dateString: string | null): string {
   if (!dateString) return '—';
   try {
-    const date = new Date(dateString);
-    const zoned = toMoscowTime(date);
-    return formatDateFn(zoned, 'dd.MM.yyyy HH:mm:ss');
+    return formatInTimeZone(new Date(dateString), 'Europe/Moscow', 'dd.MM.yyyy HH:mm:ss');
   } catch {
     return dateString;
   }
