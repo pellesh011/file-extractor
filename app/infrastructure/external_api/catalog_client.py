@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import os
-import random
 import tempfile
-from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Any, TypeVar, cast
+from collections.abc import AsyncIterator
+from typing import Any, cast
 
 import aiofiles
 import httpx
@@ -14,26 +12,28 @@ from loguru import logger
 
 from app.application.ports.external_api import ExternalAPIClient, FileNamesResult
 from app.core.config import settings
+from app.infrastructure.external_api.exceptions import (
+    ExternalAPIBlockedError,
+    ExternalAPIForbiddenError,
+    ExternalAPINotFoundError,
+    ExternalAPIParseError,
+    ExternalAPIRateLimitedError,
+    ExternalAPIServerError,
+)
 from app.infrastructure.external_api.rate_limiter import AdaptiveRateLimiter
-
-
-def calculate_retry_delay(retry_after: int) -> float:
-    base = retry_after * 1.1
-    jitter = min(retry_after * 0.05, 10)
-    return base + random.uniform(0, jitter)
-
-
-T = TypeVar("T")
+from app.infrastructure.external_api.retry import AsyncRetryExecutor, with_retry
 
 
 class CatalogClient(ExternalAPIClient):
     def __init__(self) -> None:
         self._base_url = settings.external_api_base_url.rstrip("/")
-        self._timeout = settings.external_api_timeout_seconds
-        self._max_retries = settings.external_api_max_retries
-        self._rate_limit_retries = settings.external_api_rate_limit_retries
-        self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._client = httpx.AsyncClient(timeout=settings.external_api_timeout_seconds)
         self._rate_limiter = AdaptiveRateLimiter()
+        self._retry = AsyncRetryExecutor(
+            max_retries=settings.external_api_max_retries,
+            rate_limit_retries=settings.external_api_rate_limit_retries,
+            retryable_exceptions=(TimeoutError, httpx.HTTPError),
+        )
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -44,18 +44,16 @@ class CatalogClient(ExternalAPIClient):
     async def __aexit__(self, *args: Any) -> None:
         await self.aclose()
 
+    @with_retry()
     async def get_file_names(self, candidate_id: str | None = None) -> FileNamesResult:
         headers = self._build_headers(candidate_id)
-        return await self._with_retry(
-            request_fn=lambda: self._request_get_file_names(headers),
-            operation_name="get_file_names",
-        )
+        return await self._request_get_file_names(headers)
 
     async def download_files_stream(self, file_names: list[str]) -> AsyncIterator[bytes]:
         headers = {"Content-Type": "application/json"}
-        path = await self._with_retry(
-            request_fn=lambda: self._request_download_stream(file_names, headers),
-            operation_name="download_stream",
+        path = await self._retry.execute(
+            lambda: self._request_download_stream(file_names, headers),
+            "download_stream",
         )
         try:
             async with aiofiles.open(path, "rb") as f:
@@ -67,14 +65,12 @@ class CatalogClient(ExternalAPIClient):
         finally:
             os.unlink(path)
 
+    @with_retry()
     async def mark_downloaded(
         self, file_names: list[str], candidate_id: str | None = None
     ) -> tuple[int, int]:
         headers = self._build_headers(candidate_id)
-        return await self._with_retry(
-            request_fn=lambda: self._request_mark_downloaded(headers, file_names),
-            operation_name="mark_downloaded",
-        )
+        return await self._request_mark_downloaded(headers, file_names)
 
     async def _request_get_file_names(self, headers: dict[str, str]) -> FileNamesResult:
         await self._rate_limiter.wait()
@@ -89,13 +85,10 @@ class CatalogClient(ExternalAPIClient):
 
     async def _request_download_stream(self, file_names: list[str], headers: dict[str, str]) -> str:
         await self._rate_limiter.wait()
-        # File handle must survive after this function returns.
-        # The consumer opens it asynchronously by path.
-        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
-            delete=False,
-        )
-        name = tmp.name
-        tmp.close()
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            name = tmp.name
+
         try:
             async with aiofiles.open(name, "wb") as f:
                 async with self._client.stream(
@@ -118,6 +111,7 @@ class CatalogClient(ExternalAPIClient):
         self, headers: dict[str, str], file_names: list[str]
     ) -> tuple[int, int]:
         await self._rate_limiter.wait()
+        logger.info(f"mark_downloaded request: file_names={file_names}")
         response = await self._client.post(
             f"{self._base_url}/api/files/downloaded",
             json={"file_names": file_names},
@@ -126,54 +120,8 @@ class CatalogClient(ExternalAPIClient):
         await self._handle_errors(response)
         data = _safe_json(response, "mark_downloaded")
         self._rate_limiter.on_success()
+        logger.info(f"mark_downloaded response: {data}")
         return data.get("marked_now", 0), data.get("already_marked", 0)
-
-    async def _with_retry(self, request_fn: Callable[[], Awaitable[T]], operation_name: str) -> T:
-        attempt = 0
-        rate_attempt = 0
-
-        while True:
-            try:
-                return await request_fn()
-            except ExternalAPIRateLimitedError as e:
-                rate_attempt += 1
-                if self._rate_limit_retries >= 0 and rate_attempt > self._rate_limit_retries:
-                    logger.error(
-                        f"{operation_name}_rate_limit_exhausted retry_after={e.retry_after}s",
-                        attempt=rate_attempt,
-                    )
-                    raise
-                logger.warning(
-                    f"{operation_name}_rate_limited retry_after={e.retry_after}s",
-                    attempt=rate_attempt,
-                )
-                await asyncio.sleep(calculate_retry_delay(e.retry_after))
-            except ExternalAPIBlockedError as e:
-                rate_attempt += 1
-                if self._rate_limit_retries >= 0 and rate_attempt > self._rate_limit_retries:
-                    logger.error(
-                        f"{operation_name}_blocked_exhausted retry_after={e.retry_after}s",
-                        attempt=rate_attempt,
-                    )
-                    raise
-                logger.warning(
-                    f"{operation_name}_blocked retry_after={e.retry_after}s",
-                    attempt=rate_attempt,
-                )
-                await asyncio.sleep(calculate_retry_delay(e.retry_after))
-            except (TimeoutError, httpx.HTTPError, ExternalAPIServerError) as e:
-                attempt += 1
-                if attempt > self._max_retries:
-                    logger.error(f"{operation_name}_failed", error=str(e))
-                    raise
-                wait = 2**attempt
-                logger.warning(
-                    f"{operation_name}_retry",
-                    attempt=attempt,
-                    error=str(e),
-                    wait=wait,
-                )
-                await asyncio.sleep(wait)
 
     async def _handle_errors(self, response: httpx.Response) -> None:
         if response.status_code == 429:
@@ -214,31 +162,3 @@ def _safe_json(response: httpx.Response, context: str = "") -> dict[str, Any]:
         return cast("dict[str, Any]", response.json())
     except (json.JSONDecodeError, ValueError, TypeError) as e:
         raise ExternalAPIParseError(f"Invalid JSON in {context}: {e}") from e
-
-
-class ExternalAPIRateLimitedError(Exception):
-    def __init__(self, retry_after: int) -> None:
-        self.retry_after = retry_after
-        super().__init__(f"Rate limited. Retry after {retry_after}s")
-
-
-class ExternalAPIBlockedError(Exception):
-    def __init__(self, retry_after: int) -> None:
-        self.retry_after = retry_after
-        super().__init__(f"Blocked. Retry after {retry_after}s")
-
-
-class ExternalAPIForbiddenError(Exception):
-    pass
-
-
-class ExternalAPINotFoundError(Exception):
-    pass
-
-
-class ExternalAPIServerError(Exception):
-    pass
-
-
-class ExternalAPIParseError(Exception):
-    pass
