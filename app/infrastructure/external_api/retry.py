@@ -8,7 +8,6 @@ from typing import Any, TypeVar
 from loguru import logger
 
 from app.infrastructure.external_api.exceptions import (
-    ExternalAPIBlockedError,
     ExternalAPIRateLimitedError,
     ExternalAPIServerError,
 )
@@ -51,22 +50,6 @@ class AsyncRetryExecutor:
                 if self._retry_exhausted(rate_attempt, self._rate_limit_retries):
                     logger.error(
                         f"{operation_name}_rate_limit_exhausted",
-                        attempt=rate_attempt,
-                    )
-                    raise
-
-                await self._sleep_rate_limit(
-                    operation_name,
-                    rate_attempt,
-                    e.retry_after,
-                )
-
-            except ExternalAPIBlockedError as e:
-                rate_attempt += 1
-
-                if self._retry_exhausted(rate_attempt, self._rate_limit_retries):
-                    logger.error(
-                        f"{operation_name}_blocked_exhausted",
                         attempt=rate_attempt,
                     )
                     raise

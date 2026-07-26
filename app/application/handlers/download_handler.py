@@ -84,7 +84,12 @@ class ProcessFilesHandler:
 
         while True:
             if len(pending) < 3:
-                names_result = await self._api.get_file_names(command.candidate_id)
+                try:
+                    names_result = await self._api.get_file_names(command.candidate_id)
+                except ExternalAPIBlockedError as block_err:
+                    if await self._handle_block(task, block_err):
+                        return
+                    raise
                 if not names_result.file_names:
                     if not pending:
                         break
