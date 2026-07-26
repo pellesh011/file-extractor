@@ -81,7 +81,9 @@ class CatalogClient(ExternalAPIClient):
         return FileNamesResult(file_names=data.get("file_names", []))
 
     async def _request_download_stream(self, file_names: list[str], headers: dict[str, str]) -> str:
-        tmp = tempfile.NamedTemporaryFile(delete=False)  # noqa: SIM115 — need name before aiofiles.open
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False
+        )  # noqa: SIM115 — need name before aiofiles.open
         name = tmp.name
         tmp.close()
         try:
