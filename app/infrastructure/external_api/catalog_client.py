@@ -80,9 +80,7 @@ class CatalogClient(ExternalAPIClient):
         data = _safe_json(response, "get_file_names")
         return FileNamesResult(file_names=data.get("file_names", []))
 
-    async def _request_download_stream(
-        self, file_names: list[str], headers: dict[str, str]
-    ) -> str:
+    async def _request_download_stream(self, file_names: list[str], headers: dict[str, str]) -> str:
         tmp = tempfile.NamedTemporaryFile(delete=False)  # noqa: SIM115 — need name before aiofiles.open
         name = tmp.name
         tmp.close()
@@ -153,7 +151,7 @@ class CatalogClient(ExternalAPIClient):
                 if attempt > self._max_retries:
                     logger.error(f"{operation_name}_failed", error=str(e))
                     raise
-                wait = 2 ** attempt
+                wait = 2**attempt
                 logger.warning(
                     f"{operation_name}_retry",
                     attempt=attempt,
