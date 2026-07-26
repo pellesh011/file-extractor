@@ -17,6 +17,7 @@ dependencies = [
     "redis>=5.2.0",
     "alembic>=1.13.0",
     "python-multipart>=0.0.12",
+    "aiofiles>=24.0.0",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,7 @@ dev = [
     "black>=24.8.0",
     "mypy>=1.11.0",
     "coverage>=7.6.0",
+    "debugpy>=1.8.0",
 ]
 
 [tool.black]

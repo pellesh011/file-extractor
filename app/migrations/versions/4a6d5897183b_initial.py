@@ -9,9 +9,8 @@ Create Date: 2026-07-24 13:00:12.196915
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "4a6d5897183b"
 down_revision: str | Sequence[str] | None = None

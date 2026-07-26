@@ -18,10 +18,4 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    beat_schedule={
-        "dispatch-outbox-events": {
-            "task": "app.worker.celery_tasks.dispatch_outbox_events",
-            "schedule": settings.outbox_poll_interval_seconds,
-        },
-    },
 )

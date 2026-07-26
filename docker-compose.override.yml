@@ -1,0 +1,37 @@
+services:
+  api:
+    build:
+      context: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DEBUGPY_ENABLE: "1"
+      DEBUGPY_PORT: "5678"
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./app:/app/app
+
+  worker:
+    build:
+      context: .
+    command: celery -A app.core.celery_app worker --loglevel=info --pool=solo
+    environment:
+      DEBUGPY_ENABLE: "1"
+      DEBUGPY_PORT: "5679"
+    ports:
+      - "5679:5679"
+    volumes:
+      - ./app:/app/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    environment:
+      VITE_API_TARGET: "http://api:8000"
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
