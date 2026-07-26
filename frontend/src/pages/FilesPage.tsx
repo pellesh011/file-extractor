@@ -305,16 +305,18 @@ try {
                   <thead>
                     <tr>
                       <th>Цифра</th>
-                      <th>Количество</th>
+                        {[...Array(10)].map((_, i) => (
+                          <th key={i}><strong>{i}</strong></th>
+                        ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {[...Array(10)].map((_, i) => (
-                      <tr key={i}>
-                        <td><strong>{i}</strong></td>
-                        <td>{formatNumber(stats.overall[i.toString()] || 0)}</td>
+                      <tr>
+                         <th>Количество</th>
+                         {[...Array(10)].map((_, i) => (
+                        <td  key={i}>{formatNumber(stats.overall[i.toString()] || 0)}</td>
+                        ))}
                       </tr>
-                    ))}
                   </tbody>
                 </table>
               </div>

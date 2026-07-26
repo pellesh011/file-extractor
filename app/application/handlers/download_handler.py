@@ -76,13 +76,20 @@ class ProcessFilesHandler:
             return await self._uow.task_repo.get_by_id(task_id)
 
     async def _run(self, task: DownloadTask, command: ProcessFilesCommand) -> None:
-        while True:
-            names_result = await self._api.get_file_names(command.candidate_id)
-            if not names_result.file_names:
-                break
+        pending: list[str] = []
 
-            batch = names_result.file_names[:3]
-            task.increase_received(len(names_result.file_names))
+        while True:
+            if len(pending) < 3:
+                names_result = await self._api.get_file_names(command.candidate_id)
+                if not names_result.file_names:
+                    if not pending:
+                        break
+                else:
+                    pending.extend(names_result.file_names)
+                    task.increase_received(len(names_result.file_names))
+
+            batch = pending[:3]
+            pending = pending[3:]
 
             zip_stream = self._api.download_files_stream(batch)
 

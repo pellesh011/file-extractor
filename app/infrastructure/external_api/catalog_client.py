@@ -14,6 +14,7 @@ from loguru import logger
 
 from app.application.ports.external_api import ExternalAPIClient, FileNamesResult
 from app.core.config import settings
+from app.infrastructure.external_api.rate_limiter import AdaptiveRateLimiter
 
 
 def calculate_retry_delay(retry_after: int) -> float:
@@ -29,6 +30,7 @@ class CatalogClient(ExternalAPIClient):
         self._max_retries = settings.external_api_max_retries
         self._rate_limit_retries = settings.external_api_rate_limit_retries
         self._client = httpx.AsyncClient(timeout=self._timeout)
+        self._rate_limiter = AdaptiveRateLimiter()
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -72,20 +74,23 @@ class CatalogClient(ExternalAPIClient):
         )
 
     async def _request_get_file_names(self, headers: dict[str, str]) -> FileNamesResult:
+        await self._rate_limiter.wait()
         response = await self._client.get(
             f"{self._base_url}/api/files/names",
             headers=headers,
         )
         await self._handle_errors(response)
         data = _safe_json(response, "get_file_names")
+        self._rate_limiter.on_success()
         return FileNamesResult(file_names=data.get("file_names", []))
 
     async def _request_download_stream(self, file_names: list[str], headers: dict[str, str]) -> str:
+        await self._rate_limiter.wait()
         # File handle must survive after this function returns.
         # The consumer opens it asynchronously by path.
-        tmp = tempfile.NamedTemporaryFile(
+        tmp = tempfile.NamedTemporaryFile(  # noqa: SIM115
             delete=False,
-        )  # noqa: SIM115
+        )
         name = tmp.name
         tmp.close()
         try:
@@ -100,6 +105,7 @@ class CatalogClient(ExternalAPIClient):
                     async for chunk in response.aiter_bytes():
                         await f.write(chunk)
                 await f.flush()
+            self._rate_limiter.on_success()
             return name
         except Exception:
             os.unlink(name)
@@ -108,6 +114,7 @@ class CatalogClient(ExternalAPIClient):
     async def _request_mark_downloaded(
         self, headers: dict[str, str], file_names: list[str]
     ) -> tuple[int, int]:
+        await self._rate_limiter.wait()
         response = await self._client.post(
             f"{self._base_url}/api/files/downloaded",
             json={"file_names": file_names},
@@ -115,6 +122,7 @@ class CatalogClient(ExternalAPIClient):
         )
         await self._handle_errors(response)
         data = _safe_json(response, "mark_downloaded")
+        self._rate_limiter.on_success()
         return data.get("marked_now", 0), data.get("already_marked", 0)
 
     async def _with_retry(self, request_fn, operation_name: str):
@@ -151,6 +159,7 @@ class CatalogClient(ExternalAPIClient):
                 )
                 await asyncio.sleep(calculate_retry_delay(e.retry_after))
             except (TimeoutError, httpx.HTTPError, ExternalAPIServerError) as e:
+
                 attempt += 1
                 if attempt > self._max_retries:
                     logger.error(f"{operation_name}_failed", error=str(e))
@@ -166,6 +175,7 @@ class CatalogClient(ExternalAPIClient):
 
     async def _handle_errors(self, response: httpx.Response) -> None:
         if response.status_code == 429:
+            self._rate_limiter.on_failure()
             retry_after = response.headers.get("Retry-After", "60")
             logger.warning(f"rate_limited retry_after={retry_after}s", status=429)
             raise ExternalAPIRateLimitedError(int(retry_after))
@@ -173,6 +183,7 @@ class CatalogClient(ExternalAPIClient):
         if response.status_code == 403:
             retry_after = response.headers.get("Retry-After")
             if retry_after is not None:
+                self._rate_limiter.on_failure()
                 logger.warning(f"blocked retry_after={retry_after}s", status=403)
                 raise ExternalAPIBlockedError(int(retry_after))
             logger.warning("forbidden", status=403)
