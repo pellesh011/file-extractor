@@ -6,13 +6,13 @@ from uuid import uuid4
 from loguru import logger
 
 from app.application.commands import ProcessFilesCommand, StartDownloadCommand
+from app.application.exceptions import ExternalAPIBlockedError
 from app.application.ports import ExternalAPIClient, FileProcessor, ObjectStorage
 from app.application.unit_of_work import UnitOfWork
 from app.core.celery_app import celery_app
 from app.domain.entities.download_task import DownloadTask
 from app.domain.entities.file import File
 from app.domain.value_objects import FileHash, FileId, FileSize, StorageKey
-from app.infrastructure.external_api.exceptions import ExternalAPIBlockedError
 
 
 class StartDownloadHandler:

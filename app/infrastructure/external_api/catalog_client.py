@@ -10,10 +10,10 @@ import aiofiles
 import httpx
 from loguru import logger
 
+from app.application.exceptions import ExternalAPIBlockedError
 from app.application.ports.external_api import ExternalAPIClient, FileNamesResult
 from app.core.config import settings
 from app.infrastructure.external_api.exceptions import (
-    ExternalAPIBlockedError,
     ExternalAPIForbiddenError,
     ExternalAPINotFoundError,
     ExternalAPIParseError,
