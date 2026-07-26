@@ -93,6 +93,7 @@ class ProcessFilesHandler:
 
             zip_stream = self._api.download_files_stream(batch)
 
+            batch_file_entities: list[File] = []
             async for extracted in self._processor.extract_stream(zip_stream):
                 file_hash = FileHash.compute(extracted.content)
                 storage_key = StorageKey(f"files/{extracted.filename}")
@@ -119,6 +120,8 @@ class ProcessFilesHandler:
                     await self._uow.file_repo.add(file_entity)
                     await self._uow.commit()
 
+                batch_file_entities.append(file_entity)
+
                 logger.info(
                     "file_uploaded",
                     file_id=str(file_entity.id),
@@ -126,7 +129,12 @@ class ProcessFilesHandler:
                     size=extracted.size,
                 )
 
-            await self._api.mark_downloaded(batch, command.candidate_id)
+            try:
+                await self._api.mark_downloaded(batch, command.candidate_id)
+            except Exception:
+                await self._cleanup_batch_files(batch_file_entities)
+                raise
+
             task.increase_processed(len(batch))
 
             async with self._uow:
@@ -144,6 +152,29 @@ class ProcessFilesHandler:
             received=task.received_files,
             processed=task.processed_files,
         )
+
+    async def _cleanup_batch_files(self, files: list[File]) -> None:
+        for file_entity in files:
+            if file_entity.storage_key is None:
+                continue
+            try:
+                await self._storage.delete(file_entity.storage_key.value)
+            except Exception as e:
+                logger.warning(
+                    "failed_to_delete_file_from_storage",
+                    file_id=str(file_entity.id),
+                    error=str(e),
+                )
+            try:
+                async with self._uow:
+                    await self._uow.file_repo.delete(file_entity.id)
+                    await self._uow.commit()
+            except Exception as e:
+                logger.warning(
+                    "failed_to_delete_file_from_db",
+                    file_id=str(file_entity.id),
+                    error=str(e),
+                )
 
     async def _fail_task(self, task: DownloadTask, error: str) -> None:
         task.fail(error)
