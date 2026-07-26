@@ -11,7 +11,8 @@ class FileStatus(Enum):
 
 
 class TaskStatus(Enum):
-    CREATED = auto()
+    PENDING = auto()
     RUNNING = auto()
-    COMPLETED = auto()
+    SUCCESS = auto()
     FAILED = auto()
+    BLOCKED = auto()

@@ -32,7 +32,7 @@ class TestStartDownloadHandler:
             assert isinstance(task_id, str)
 
     @pytest.mark.asyncio
-    async def test_execute_creates_running_task(self, mock_uow: MagicMock) -> None:
+    async def test_execute_creates_pending_task(self, mock_uow: MagicMock) -> None:
         with patch("app.core.celery_app.celery_app.send_task") as mock_send_task:
             mock_send_task.return_value.id = "test-task-id"
             handler = StartDownloadHandler(uow=mock_uow)
@@ -43,5 +43,5 @@ class TestStartDownloadHandler:
             added = mock_uow.task_repo.add.call_args[0][0]
             assert added.id == task_id
             assert added.candidate_id == "test"
-            assert added.status.name == "RUNNING"
-            assert added.started_at is not None
+            assert added.status.name == "PENDING"
+            assert added.started_at is None

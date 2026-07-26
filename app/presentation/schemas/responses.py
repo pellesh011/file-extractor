@@ -11,6 +11,10 @@ class DownloadTaskResponse(BaseModel):
     error: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    worker_id: str | None = None
+    attempts: int = 0
+    blocked_until: datetime | None = None
+    block_reason: str | None = None
 
 
 class TaskCreatedResponse(BaseModel):
