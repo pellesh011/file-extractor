@@ -103,77 +103,85 @@ class ProcessFilesHandler:
             batch = pending[:3]
             pending = pending[3:]
 
+            zip_stream = self._api.download_files_stream(batch)
+
+            batch_file_entities: list[File] = []
             try:
-                zip_stream = self._api.download_files_stream(batch)
+                async for extracted in self._processor.extract_stream(zip_stream):
+                    await self._maybe_heartbeat(task, heartbeat_counter)
+                    heartbeat_counter += 1
+
+                    already_downloaded = await self._uow.task_repo.downloaded_file_exists(
+                        task.id, extracted.filename
+                    )
+                    if already_downloaded:
+                        logger.info(
+                            "file_already_downloaded_skipping",
+                            task_id=task.id,
+                            filename=extracted.filename,
+                        )
+                        continue
+
+                    file_hash = FileHash.compute(extracted.content)
+                    storage_key = StorageKey(f"files/{extracted.filename}")
+
+                    async def content_stream(data: bytes) -> AsyncIterator[bytes]:
+                        yield data
+
+                    await self._storage.upload_stream(
+                        content_stream(extracted.content),
+                        key=storage_key.value,
+                        length=extracted.size,
+                    )
+
+                    file_entity = File(
+                        file_id=FileId(),
+                        filename=extracted.filename,
+                        size=FileSize(extracted.size),
+                        hash=file_hash,
+                    )
+                    file_entity.start_upload()
+                    file_entity.complete_upload(storage_key, file_hash)
+
+                    async with self._uow:
+                        await self._uow.file_repo.add(file_entity)
+                        await self._uow.task_repo.record_downloaded_file(
+                            task.id, extracted.filename, file_hash
+                        )
+                        await self._uow.commit()
+
+                    batch_file_entities.append(file_entity)
+
+                    logger.info(
+                        "file_uploaded",
+                        file_id=str(file_entity.id),
+                        filename=extracted.filename,
+                        size=extracted.size,
+                    )
             except ExternalAPIBlockedError as block_err:
+                await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 if await self._handle_block(task, block_err):
                     return
                 raise
             except Exception:
+                await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 raise
-
-            batch_file_entities: list[File] = []
-            async for extracted in self._processor.extract_stream(zip_stream):
-                await self._maybe_heartbeat(task, heartbeat_counter)
-                heartbeat_counter += 1
-
-                if await self._uow.task_repo.downloaded_file_exists(task.id, extracted.filename):
-                    logger.info(
-                        "file_already_downloaded_skipping",
-                        task_id=task.id,
-                        filename=extracted.filename,
-                    )
-                    continue
-
-                file_hash = FileHash.compute(extracted.content)
-                storage_key = StorageKey(f"files/{extracted.filename}")
-
-                async def content_stream(data: bytes) -> AsyncIterator[bytes]:
-                    yield data
-
-                await self._storage.upload_stream(
-                    content_stream(extracted.content),
-                    key=storage_key.value,
-                    length=extracted.size,
-                )
-
-                file_entity = File(
-                    file_id=FileId(),
-                    filename=extracted.filename,
-                    size=FileSize(extracted.size),
-                    hash=file_hash,
-                )
-                file_entity.start_upload()
-                file_entity.complete_upload(storage_key, file_hash)
-
-                async with self._uow:
-                    await self._uow.file_repo.add(file_entity)
-                    await self._uow.task_repo.record_downloaded_file(
-                        task.id, extracted.filename, file_hash
-                    )
-                    await self._uow.commit()
-
-                batch_file_entities.append(file_entity)
-
-                logger.info(
-                    "file_uploaded",
-                    file_id=str(file_entity.id),
-                    filename=extracted.filename,
-                    size=extracted.size,
-                )
 
             try:
                 await self._api.mark_downloaded(batch, command.candidate_id)
+                task.increase_processed(len(batch))
             except ExternalAPIBlockedError as block_err:
                 await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 if await self._handle_block(task, block_err):
                     return
                 raise
             except Exception:
                 await self._cleanup_batch_files(task.id, batch_file_entities)
+                task.decrease_received(len(batch) + len(pending))
                 raise
-
-            task.increase_processed(len(batch))
 
             async with self._uow:
                 await self._uow.task_repo.update(task)

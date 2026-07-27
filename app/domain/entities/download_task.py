@@ -110,6 +110,9 @@ class DownloadTask:
             raise TaskNotRunningError(self._id, self._status.name)
         self._received_files += count
 
+    def decrease_received(self, count: int) -> None:
+        self._received_files = max(0, self._received_files - count)
+
     def increase_processed(self, count: int) -> None:
         if self._status != TaskStatus.RUNNING:
             raise TaskNotRunningError(self._id, self._status.name)
