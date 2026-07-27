@@ -8,8 +8,8 @@ from loguru import logger
 class AdaptiveRateLimiter:
     def __init__(
         self,
-        initial_delay: float = 1,
-        min_delay: float = 0.3,
+        initial_delay: float = 1.5,
+        min_delay: float = 0.6,
         max_delay: float = 10.0,
     ) -> None:
         self._delay = initial_delay
